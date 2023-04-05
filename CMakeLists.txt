@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Set output directories
-set(CMAKE_BINARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 # Add the Tako subdirectory
 add_subdirectory(dependencies/Tako)
@@ -20,11 +20,12 @@ file(GLOB_RECURSE INCLUDES "includes/*.h")
 
 # Add the include directories
 include_directories(includes)
+include_directories(dependencies)
 
 set(ALL_FILES ${SOURCES} ${HEADERS} ${INCLUDES})
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${ALL_FILES})
 
 # Build the executable
-add_executable(Takoyaki ${ALL_FILES})
+add_executable(Takoyaki WIN32 ${ALL_FILES})
 
-
+target_link_libraries(Takoyaki PRIVATE Tako)
