@@ -1,0 +1,3 @@
+[submodule "dependencies/Tako"]
+	path = dependencies/Tako
+	url = git@github.com:Eclmist/Tako.git
