@@ -17,15 +17,19 @@ add_subdirectory(dependencies/Tako)
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 file(GLOB_RECURSE HEADERS "src/*.h")
 file(GLOB_RECURSE INCLUDES "includes/*.h")
+file(GLOB_RECURSE RESOURCES "resources/*")
+
 
 # Add the include directories
 include_directories(includes)
 include_directories(dependencies)
+include_directories(resources)
 
-set(ALL_FILES ${SOURCES} ${HEADERS} ${INCLUDES})
+set(ALL_FILES ${SOURCES} ${HEADERS} ${INCLUDES} ${RESOURCES})
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${ALL_FILES})
 
 # Build the executable
 add_executable(Takoyaki WIN32 ${ALL_FILES})
 
+target_compile_definitions(Takoyaki PRIVATE UNICODE)
 target_link_libraries(Takoyaki PRIVATE Tako)
