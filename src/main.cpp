@@ -17,13 +17,8 @@
     along with this program. If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "Tako/includes/tako.h"
-
-#define WIN32_LEAN_AND_MEAN
-
-#include <Windows.h>
-#include <iostream>
 #include "resource.h"
+#include "outputwindow.h"
 
 #define NOTIFICATION_TRAY_ICON_MSG      (WM_USER + 0x100)
 #define NOTIFICATION_TRAY_UID           1
@@ -37,16 +32,39 @@ int WINAPI WinMain(
     _In_ LPSTR lpCmdLine,
     _In_ int nShowCmd)
 {
+    // Prevent multiple instances of Takoyaki
+    CreateMutexA(0, false, "Local\\Takoyaki");
+    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    {
+        MessageBox(nullptr, L"An instance of Takoyaki is already running.", L"Takoyaki", MB_OK | MB_ICONERROR);
+        return 0;
+    }
+
     // Register the window class
     WNDCLASS wc = { 0 };
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
     wc.lpszClassName = L"TakoyakiWindowClass";
-    RegisterClass(&wc);
+    HRESULT hr = RegisterClass(&wc);
+
+    if (FAILED(hr))
+    {
+        MessageBox(nullptr, L"Failed to register window class.", L"Takoyaki Error", MB_OK);
+        return 0;
+    }
 
     // Create the window
     HWND hwnd = CreateWindow(L"TakoyakiWindowClass", L"Takoyaki", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, NULL, NULL, hInstance, NULL);
+
+    if (hwnd == nullptr)
+    {
+        MessageBox(nullptr, L"Failed to create win32 window.", L"Takoyaki Error", MB_OK);
+        return 0;
+    }
+
+    Takoyaki::OutputWindow outputWindow(hwnd, hInstance);
+    outputWindow.Initialize();
 
     // Add the icon to the system tray
     NOTIFYICONDATA nid = { 0 };
@@ -61,10 +79,16 @@ int WINAPI WinMain(
 
     // Run the message loop
     MSG msg = { 0 };
-    while (GetMessage(&msg, NULL, 0, 0) > 0)
+
+    while (WM_QUIT != msg.message)
     {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+        if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
+        {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+
+        outputWindow.Render();
     }
 
     // Remove the icon from the system tray
