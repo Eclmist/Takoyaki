@@ -63,6 +63,7 @@ int WINAPI WinMain(
         return 0;
     }
 
+    Tako::Initialize();
     Takoyaki::OutputWindow outputWindow(hwnd, hInstance);
     outputWindow.Initialize();
 
@@ -88,12 +89,15 @@ int WINAPI WinMain(
             DispatchMessage(&msg);
         }
 
+        Tako::UpdateBufferRegion(outputWindow.GetSharedTextureHandle(), 1920, 1080);
+
         outputWindow.Render();
     }
 
     // Remove the icon from the system tray
     Shell_NotifyIcon(NIM_DELETE, &nid);
 
+    Tako::Shutdown();
     return 0;
 }
 
