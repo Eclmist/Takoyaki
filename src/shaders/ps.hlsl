@@ -28,7 +28,6 @@ struct PS_INPUT
 
 float4 PS_Main(PS_INPUT input) : SV_Target
 {
-    return float4(1,0,0,1);
     return g_SharedTexture.Sample(g_Sampler, input.UV);
 }
 

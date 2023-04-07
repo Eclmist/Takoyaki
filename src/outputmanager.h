@@ -27,17 +27,17 @@
 #include <DirectXMath.h>
 #include <wrl.h>
 
-#include "Tako/includes/tako.h"
+#include "Tako/includes/api.h"
 
 namespace wrl = Microsoft::WRL;
 
 namespace Takoyaki
 {
-    class OutputWindow
+    class OutputManager
     {
     public:
-        OutputWindow(HWND appHwnd, HINSTANCE hInstance);
-        ~OutputWindow() = default;
+        OutputManager(HWND appHwnd, HINSTANCE hInstance);
+        ~OutputManager() = default;
 
         void Initialize();
         void Render();
@@ -72,6 +72,7 @@ namespace Takoyaki
         wrl::ComPtr<IDXGIFactory2> m_DxgiFactory;
         wrl::ComPtr<IDXGIDevice> m_DxgiDevice;
         wrl::ComPtr<IDXGISwapChain1> m_DxgiSwapChain;
+        wrl::ComPtr<IDXGIKeyedMutex> m_KeyMutex;
 
         wrl::ComPtr<ID3D11Device> m_Device;
         wrl::ComPtr<ID3D11DeviceContext> m_DeviceContext;

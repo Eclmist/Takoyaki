@@ -18,7 +18,7 @@
 */
 
 #include "resource.h"
-#include "outputwindow.h"
+#include "outputmanager.h"
 
 #define NOTIFICATION_TRAY_ICON_MSG      (WM_USER + 0x100)
 #define NOTIFICATION_TRAY_UID           1
@@ -63,8 +63,14 @@ int WINAPI WinMain(
         return 0;
     }
 
-    Tako::Initialize();
-    Takoyaki::OutputWindow outputWindow(hwnd, hInstance);
+    Tako::TakoError err = Tako::Initialize();
+    if (err != Tako::TakoError::OK)
+    {
+        MessageBox(nullptr, L"Failed to initialize Tako.dll.", L"Takoyaki Error", MB_OK);
+        return 0;
+    }
+
+    Takoyaki::OutputManager outputWindow(hwnd, hInstance);
     outputWindow.Initialize();
 
     // Add the icon to the system tray
@@ -89,7 +95,15 @@ int WINAPI WinMain(
             DispatchMessage(&msg);
         }
 
-        Tako::UpdateBufferRegion(outputWindow.GetSharedTextureHandle(), 1920, 1080);
+        Tako::TakoRect targetRect =
+        { 
+            .m_X = 0,
+            .m_Y = 0,
+            .m_Width = 1920,
+            .m_Height = 1080
+        };
+
+        Tako::CaptureIntoBuffer(outputWindow.GetSharedTextureHandle(), targetRect);
 
         outputWindow.Render();
     }

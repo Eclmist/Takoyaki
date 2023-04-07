@@ -17,14 +17,14 @@
     along with this program. If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "outputwindow.h"
+#include "outputmanager.h"
 #include <process.h>
 #include "data/vs.h"
 #include "data/ps.h"
 
 LRESULT CALLBACK OutputWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
-Takoyaki::OutputWindow::OutputWindow(HWND appHwnd, HINSTANCE hInstance)
+Takoyaki::OutputManager::OutputManager(HWND appHwnd, HINSTANCE hInstance)
     : m_hInstance(hInstance)
     , m_AppHwnd(appHwnd)
     , m_OutputHwnd(nullptr)
@@ -35,14 +35,29 @@ Takoyaki::OutputWindow::OutputWindow(HWND appHwnd, HINSTANCE hInstance)
     };
 }
 
-void Takoyaki::OutputWindow::Initialize()
+void Takoyaki::OutputManager::Initialize()
 {
     InitializeWin32Window();
     InitializeD3D11();
 }
 
-void Takoyaki::OutputWindow::Render()
+void Takoyaki::OutputManager::Render()
 {
+    while (true)
+    {
+        HRESULT hr = m_KeyMutex->AcquireSync(0, 100);
+        if (hr == static_cast<HRESULT>(WAIT_TIMEOUT))
+            continue;
+
+        if (FAILED(hr))
+        {
+            MessageBox(nullptr, L"Failed to acquire sync on key mutex.", L"Takoyaki Error", MB_OK);
+            exit(0);
+        }
+
+        break;
+    }
+
     // Vertices for drawing whole texture
     DirectX::XMFLOAT3 Pos;
     DirectX::XMFLOAT2 TexCoord;
@@ -115,14 +130,24 @@ void Takoyaki::OutputWindow::Render()
     // Draw textured quad onto render target
     m_DeviceContext->Draw(NumVertices, 0);
 
+    // Release keyed mutex
+    hr = m_KeyMutex->ReleaseSync(0);
+    if (FAILED(hr))
+    {
+        MessageBox(nullptr, L"Failed to release keyed mutex.", L"Takoyaki Error", MB_OK);
+        exit(0);
+    }
+
     hr = m_DxgiSwapChain->Present(1, 0);
+
+    vertexBuffer->Release();
+    shaderResource->Release();
 }
 
-HANDLE Takoyaki::OutputWindow::GetSharedTextureHandle() const
+HANDLE Takoyaki::OutputManager::GetSharedTextureHandle() const
 {
     HANDLE handle = nullptr;
 
-    // QI IDXGIResource interface to synchronized shared surface.
     IDXGIResource* resource = nullptr;
     HRESULT hr = m_SharedTexture->QueryInterface(__uuidof(IDXGIResource), reinterpret_cast<void**>(&resource));
     if (SUCCEEDED(hr))
@@ -136,12 +161,12 @@ HANDLE Takoyaki::OutputWindow::GetSharedTextureHandle() const
     return handle;
 }
 
-Tako::TakoRect Takoyaki::OutputWindow::GetTargetRect() const
+Tako::TakoRect Takoyaki::OutputManager::GetTargetRect() const
 {
     return m_TargetRect;
 }
 
-void Takoyaki::OutputWindow::SetTargetRect(Tako::TakoRect rect)
+void Takoyaki::OutputManager::SetTargetRect(Tako::TakoRect rect)
 {
     m_TargetRect = rect;
 
@@ -150,7 +175,7 @@ void Takoyaki::OutputWindow::SetTargetRect(Tako::TakoRect rect)
     ResizeSwapChain();
 }
 
-void Takoyaki::OutputWindow::InitializeWin32Window()
+void Takoyaki::OutputManager::InitializeWin32Window()
 {
     m_OutputHwnd = CreateWindowExW(
         0, L"TakoyakiWindowClass", L"Takoyaki",
@@ -167,7 +192,7 @@ void Takoyaki::OutputWindow::InitializeWin32Window()
     MoveWindow(m_OutputHwnd, -32000, -32000, 1920, 1080, false);
 }
 
-void Takoyaki::OutputWindow::InitializeD3D11()
+void Takoyaki::OutputManager::InitializeD3D11()
 {
     InitializeDevice();
     InitializeDxgi();
@@ -181,7 +206,7 @@ void Takoyaki::OutputWindow::InitializeD3D11()
     UpdateViewport();
 }
 
-void Takoyaki::OutputWindow::InitializeDevice()
+void Takoyaki::OutputManager::InitializeDevice()
 {
     D3D_DRIVER_TYPE driverTypes[] =
     {
@@ -193,6 +218,8 @@ void Takoyaki::OutputWindow::InitializeDevice()
 
     D3D_FEATURE_LEVEL featureLevels[] =
     {
+    // Release old buffers
+    // On DX12, this would be done manually with signal/fence
         D3D_FEATURE_LEVEL_11_0,
         D3D_FEATURE_LEVEL_10_1,
         D3D_FEATURE_LEVEL_10_0,
@@ -225,7 +252,7 @@ void Takoyaki::OutputWindow::InitializeDevice()
     }
 }
 
-void Takoyaki::OutputWindow::InitializeDxgi()
+void Takoyaki::OutputManager::InitializeDxgi()
 {
     // DXGI Factory
     HRESULT hr = m_Device->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(m_DxgiDevice.GetAddressOf()));
@@ -250,7 +277,7 @@ void Takoyaki::OutputWindow::InitializeDxgi()
     }
 }
 
-void Takoyaki::OutputWindow::InitializeSwapChain()
+void Takoyaki::OutputManager::InitializeSwapChain()
 {
     // Get window size
     RECT windowRect;
@@ -279,7 +306,7 @@ void Takoyaki::OutputWindow::InitializeSwapChain()
     }
 }
 
-void Takoyaki::OutputWindow::InitializeSharedTexture()
+void Takoyaki::OutputManager::InitializeSharedTexture()
 {
     D3D11_TEXTURE2D_DESC desc;
     RtlZeroMemory(&desc, sizeof(D3D11_TEXTURE2D_DESC));
@@ -292,7 +319,7 @@ void Takoyaki::OutputWindow::InitializeSharedTexture()
     desc.Usage = D3D11_USAGE_DEFAULT;
     desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
     desc.CPUAccessFlags = 0;
-    desc.MiscFlags = 0;
+    desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
 
     HRESULT hr = m_Device->CreateTexture2D(&desc, nullptr, m_SharedTexture.GetAddressOf());
     static bool isInitialization = true;
@@ -315,9 +342,17 @@ void Takoyaki::OutputWindow::InitializeSharedTexture()
 
         exit(0);
     }
+
+    // Get keyed mutex
+    hr = m_SharedTexture->QueryInterface(__uuidof(IDXGIKeyedMutex), reinterpret_cast<void**>(m_KeyMutex.GetAddressOf()));
+    if (FAILED(hr))
+    {
+        MessageBox(nullptr, L"Failed to obtain shared texture mutex.", L"Takoyaki Error", MB_OK);
+        exit(0);
+    }
 }
 
-void Takoyaki::OutputWindow::InitializeBackbufferRtv()
+void Takoyaki::OutputManager::InitializeBackbufferRtv()
 {
     ID3D11Texture2D* backBuffer = nullptr;
     HRESULT hr = m_DxgiSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&backBuffer));
@@ -340,7 +375,7 @@ void Takoyaki::OutputWindow::InitializeBackbufferRtv()
     m_DeviceContext->OMSetRenderTargets(1, m_BackbufferRtv.GetAddressOf(), nullptr);
 }
 
-void Takoyaki::OutputWindow::InitializeSampler()
+void Takoyaki::OutputManager::InitializeSampler()
 {
     D3D11_SAMPLER_DESC sampleDesc;
     RtlZeroMemory(&sampleDesc, sizeof(sampleDesc));
@@ -359,7 +394,7 @@ void Takoyaki::OutputWindow::InitializeSampler()
     }
 }
 
-void Takoyaki::OutputWindow::InitializeBlendState()
+void Takoyaki::OutputManager::InitializeBlendState()
 {
     // Create the blend state
     D3D11_BLEND_DESC blendStateDesc;
@@ -381,7 +416,7 @@ void Takoyaki::OutputWindow::InitializeBlendState()
     }
 }
 
-void Takoyaki::OutputWindow::InitializeShaders()
+void Takoyaki::OutputManager::InitializeShaders()
 {
     HRESULT hr;
 
@@ -417,10 +452,8 @@ void Takoyaki::OutputWindow::InitializeShaders()
     }
 }
 
-void Takoyaki::OutputWindow::ResizeSwapChain()
+void Takoyaki::OutputManager::ResizeSwapChain()
 {
-    // Release old buffers
-    // On DX12, this would be done manually with signal/fence
     m_BackbufferRtv->Release();
 
     DXGI_SWAP_CHAIN_DESC desc;
@@ -442,7 +475,7 @@ void Takoyaki::OutputWindow::ResizeSwapChain()
     InitializeBackbufferRtv();
 }
 
-void Takoyaki::OutputWindow::UpdateViewport()
+void Takoyaki::OutputManager::UpdateViewport()
 {
     D3D11_VIEWPORT vp;
     vp.Width = static_cast<FLOAT>(m_TargetRect.m_Width);
