@@ -103,7 +103,12 @@ int WINAPI WinMain(
             .m_Height = 1080
         };
 
-        Tako::CaptureIntoBuffer(outputWindow.GetSharedTextureHandle(), targetRect);
+        Tako::TakoError err = Tako::CaptureIntoBuffer(outputWindow.GetSharedTextureHandle(), targetRect);
+        if (err != Tako::TakoError::OK)
+        {
+            MessageBox(nullptr, L"Failed to capture display buffer. (Tako.dll)", L"Takoyaki Error", MB_OK);
+            break;
+        }
 
         outputWindow.Render();
     }

@@ -138,10 +138,10 @@ void Takoyaki::OutputManager::Render()
         exit(0);
     }
 
-    hr = m_DxgiSwapChain->Present(1, 0);
-
     vertexBuffer->Release();
     shaderResource->Release();
+
+    hr = m_DxgiSwapChain->Present(1, 0);
 }
 
 HANDLE Takoyaki::OutputManager::GetSharedTextureHandle() const
@@ -189,7 +189,8 @@ void Takoyaki::OutputManager::InitializeWin32Window()
         exit(0);
     }
 
-    MoveWindow(m_OutputHwnd, -32000, -32000, 1920, 1080, false);
+    //MoveWindow(m_OutputHwnd, -32000, -32000, 1920, 1080, false);
+    MoveWindow(m_OutputHwnd, 0, 0, 1920, 1080, false);
 }
 
 void Takoyaki::OutputManager::InitializeD3D11()
