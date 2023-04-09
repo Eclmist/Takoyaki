@@ -17,18 +17,42 @@
     along with this program. If not, see <http://www.gnu.org/licenses/>.
 */
 
+
 #include "resource.h"
 #include "outputmanager.h"
+#include "overlaymanager.h"
+
+// Coredump for crashes
+#include <dbghelp.h>
+#include <minidumpapiset.h>
+#pragma comment(lib, "dbghelp.lib")
 
 #define NOTIFICATION_TRAY_ICON_MSG      (WM_USER + 0x100)
 #define NOTIFICATION_TRAY_UID           1
 #define IDM_EXIT                        100
+#define IDM_LABEL                       101
+#define IDM_STARTCAPTURE                102
+#define IDM_STOPCAPTURE                 103
+
+bool g_Enabled = true;
+bool g_Recording = false;
+
+POINT g_StartPoint;
+
+Tako::TakoRect g_CaptureRect
+{
+    .m_X = 0,
+    .m_Y = 0,
+    .m_Width = 800,
+    .m_Height = 480
+};
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
 
 int WINAPI WinMain(
     _In_ HINSTANCE hInstance,
-    _In_opt_ HINSTANCE hPrevInstance,
+    _In_opt_ HINSTANCE hPrevInstaunce,
     _In_ LPSTR lpCmdLine,
     _In_ int nShowCmd)
 {
@@ -63,6 +87,9 @@ int WINAPI WinMain(
         return 0;
     }
 
+    HMODULE hModule = GetModuleHandle(NULL);
+    HHOOK keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, hModule, 0);
+
     Tako::TakoError err = Tako::Initialize();
     if (err != Tako::TakoError::OK)
     {
@@ -70,8 +97,11 @@ int WINAPI WinMain(
         return 0;
     }
 
-    Takoyaki::OutputManager outputWindow(hwnd, hInstance);
-    outputWindow.Initialize();
+    Takoyaki::OutputManager outputManager(hwnd);
+    Takoyaki::OverlayManager overlayManager;
+
+    outputManager.Initialize();
+    //overlayManager.Initialize();
 
     // Add the icon to the system tray
     NOTIFYICONDATA nid = { 0 };
@@ -95,28 +125,43 @@ int WINAPI WinMain(
             DispatchMessage(&msg);
         }
 
-        Tako::TakoRect targetRect =
-        { 
-            .m_X = 0,
-            .m_Y = 0,
-            .m_Width = 1920,
-            .m_Height = 1080
+        outputManager.SetEnabled(g_Enabled);
+        outputManager.SetTargetRect(g_CaptureRect);
+        
+        POINT endPoint;
+        GetPhysicalCursorPos(&endPoint);
+
+        // Calculate the rectangle coordinates.
+        RECT overlayRect =
+        {
+            std::min(g_StartPoint.x, endPoint.x),
+            std::min(g_StartPoint.y, endPoint.y),
+            std::max(g_StartPoint.x, endPoint.x),
+            std::max(g_StartPoint.y, endPoint.y),
         };
 
-        Tako::TakoError err = Tako::CaptureIntoBuffer(outputWindow.GetSharedTextureHandle(), targetRect);
+        //overlayManager.Update(overlayRect, g_Recording);
+
+        if (!g_Enabled)
+            continue;
+
+        Tako::TakoError err = Tako::CaptureIntoBuffer(outputManager.GetSharedTextureHandle(), g_CaptureRect);
         if (err != Tako::TakoError::OK)
         {
             MessageBox(nullptr, L"Failed to capture display buffer. (Tako.dll)", L"Takoyaki Error", MB_OK);
             break;
         }
 
-        outputWindow.Render();
+        outputManager.Render();
     }
 
     // Remove the icon from the system tray
     Shell_NotifyIcon(NIM_DELETE, &nid);
+    UnhookWindowsHookEx(keyboardHook);
 
+    overlayManager.Shutdown();
     Tako::Shutdown();
+
     return 0;
 }
 
@@ -132,14 +177,41 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             POINT pt;
             GetCursorPos(&pt);
             HMENU hMenu = CreatePopupMenu();
+
+            if (g_Enabled)
+                AppendMenu(hMenu, MF_GRAYED, IDM_LABEL, L"Status: Capturing");
+            else
+                AppendMenu(hMenu, MF_GRAYED, IDM_LABEL, L"Status: Stopped");
+
+            AppendMenu(hMenu, MF_SEPARATOR, 0, NULL); // Add separator
+
+            if (g_Enabled)
+                AppendMenu(hMenu, MF_STRING, IDM_STOPCAPTURE, L"Stop Capture");
+            else
+                AppendMenu(hMenu, MF_STRING, IDM_STARTCAPTURE, L"Start Capture");
+
             AppendMenu(hMenu, MF_STRING, IDM_EXIT, L"Exit");
             TrackPopupMenu(hMenu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd, NULL);
         }
         break;
     case WM_COMMAND:
         if (lParam == 0 && LOWORD(wParam) == IDM_EXIT)
+        {
             PostQuitMessage(0);
+            break;
+        }
+        else if (lParam == 0 && LOWORD(wParam) == IDM_STARTCAPTURE)
+        {
+            g_Enabled = true;
+            break;
+        }
+        else if (lParam == 0 && LOWORD(wParam) == IDM_STOPCAPTURE)
+        {
+            g_Enabled = false;
+            break;
+        }
         break;
+
     case WM_DESTROY:
         PostQuitMessage(0);
         break;
@@ -148,4 +220,53 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
 
     return 0;
+}
+
+#define X_KEY 0x58
+
+LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (nCode == HC_ACTION && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN))
+    {
+        // A key has been pressed. You can process the key event here.
+        KBDLLHOOKSTRUCT* pKeyData = (KBDLLHOOKSTRUCT*)lParam;
+
+        // Check if the WIN+SHIFT+X key combination was pressed.
+        if (pKeyData->vkCode == X_KEY && (GetKeyState(VK_LWIN) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000))
+        {
+            if (g_Recording)
+                return 1;
+
+            g_Recording = true;
+            GetPhysicalCursorPos(&g_StartPoint);
+            return 1;
+        }
+    }
+    else if (nCode == HC_ACTION && (wParam == WM_KEYUP || wParam == WM_SYSKEYUP))
+    {
+        KBDLLHOOKSTRUCT* pKeyData = (KBDLLHOOKSTRUCT*)lParam;
+
+        // Check if the WIN+SHIFT+X key combination was released.
+        if (pKeyData->vkCode == X_KEY && (GetKeyState(VK_LWIN) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000) && g_Recording)
+        {
+            g_Recording = false;
+
+            POINT endPoint;
+            GetPhysicalCursorPos(&endPoint);
+
+            // Calculate the rectangle coordinates.
+            g_CaptureRect =
+            {
+                std::min(g_StartPoint.x, endPoint.x),
+                std::min(g_StartPoint.y, endPoint.y),
+                static_cast<uint32_t>(std::max(1l, std::abs(g_StartPoint.x - endPoint.x))),
+                static_cast<uint32_t>(std::max(1l, std::abs(g_StartPoint.y - endPoint.y)))
+            };
+
+            return 1;
+        }
+    }
+
+    // Pass the message on to the next hook in the chain.
+    return CallNextHookEx(NULL, nCode, wParam, lParam);
 }

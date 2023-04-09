@@ -20,6 +20,7 @@
 #pragma once
 
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
 #include <shellapi.h>
 #include <d3d11.h>
@@ -36,7 +37,7 @@ namespace Takoyaki
     class OutputManager
     {
     public:
-        OutputManager(HWND appHwnd, HINSTANCE hInstance);
+        OutputManager(HWND appHwnd);
         ~OutputManager() = default;
 
         void Initialize();
@@ -46,6 +47,7 @@ namespace Takoyaki
         HANDLE GetSharedTextureHandle() const;
         Tako::TakoRect GetTargetRect() const;
         void SetTargetRect(Tako::TakoRect rect);
+        void SetEnabled(bool isEnabled);
 
     private:
         void InitializeWin32Window();
@@ -62,9 +64,9 @@ namespace Takoyaki
 
         void ResizeSwapChain();
         void UpdateViewport();
+        void UpdateWin32Window();
 
     private:
-        HINSTANCE m_hInstance;
         HWND m_AppHwnd;
         HWND m_OutputHwnd;
 
@@ -85,5 +87,7 @@ namespace Takoyaki
         wrl::ComPtr<ID3D11Texture2D> m_SharedTexture;
 
         Tako::TakoRect m_TargetRect;
+
+        bool m_IsEnabled;
     };
 }

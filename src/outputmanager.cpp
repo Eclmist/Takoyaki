@@ -24,9 +24,8 @@
 
 LRESULT CALLBACK OutputWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
-Takoyaki::OutputManager::OutputManager(HWND appHwnd, HINSTANCE hInstance)
-    : m_hInstance(hInstance)
-    , m_AppHwnd(appHwnd)
+Takoyaki::OutputManager::OutputManager(HWND appHwnd)
+    : m_AppHwnd(appHwnd)
     , m_OutputHwnd(nullptr)
 {
     m_TargetRect = {
@@ -168,20 +167,39 @@ Tako::TakoRect Takoyaki::OutputManager::GetTargetRect() const
 
 void Takoyaki::OutputManager::SetTargetRect(Tako::TakoRect rect)
 {
+    if (rect == m_TargetRect)
+        return;
+
     m_TargetRect = rect;
 
     UpdateViewport();
     InitializeSharedTexture();
     ResizeSwapChain();
+    UpdateWin32Window();
+}
+
+void Takoyaki::OutputManager::SetEnabled(bool isEnabled)
+{
+    if (isEnabled == m_IsEnabled)
+        return;
+
+    m_IsEnabled = isEnabled;
+    
+    if (m_IsEnabled)
+        ShowWindow(m_OutputHwnd, SW_SHOW);
+    else
+        ShowWindow(m_OutputHwnd, SW_HIDE);
 }
 
 void Takoyaki::OutputManager::InitializeWin32Window()
 {
+    HINSTANCE hInst = GetModuleHandle(NULL);
+
     m_OutputHwnd = CreateWindowExW(
         0, L"TakoyakiWindowClass", L"Takoyaki",
         WS_POPUP | WS_VISIBLE,
         0, 0, 1920, 1080,
-        nullptr, nullptr, m_hInstance, nullptr);
+        nullptr, nullptr, hInst, nullptr);
 
     if (m_OutputHwnd == nullptr)
     {
@@ -189,8 +207,7 @@ void Takoyaki::OutputManager::InitializeWin32Window()
         exit(0);
     }
 
-    //MoveWindow(m_OutputHwnd, -32000, -32000, 1920, 1080, false);
-    MoveWindow(m_OutputHwnd, 0, 0, 1920, 1080, false);
+    UpdateWin32Window();
 }
 
 void Takoyaki::OutputManager::InitializeD3D11()
@@ -290,8 +307,8 @@ void Takoyaki::OutputManager::InitializeSwapChain()
     DXGI_SWAP_CHAIN_DESC1 swapChainDesc;
     RtlZeroMemory(&swapChainDesc, sizeof(swapChainDesc));
 
-    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-    swapChainDesc.BufferCount = 2;
+    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    swapChainDesc.BufferCount = 3;
     swapChainDesc.Width = width;
     swapChainDesc.Height = height;
     swapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -380,7 +397,7 @@ void Takoyaki::OutputManager::InitializeSampler()
 {
     D3D11_SAMPLER_DESC sampleDesc;
     RtlZeroMemory(&sampleDesc, sizeof(sampleDesc));
-    sampleDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sampleDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
     sampleDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
     sampleDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
     sampleDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
@@ -486,6 +503,11 @@ void Takoyaki::OutputManager::UpdateViewport()
     vp.TopLeftX = 0;
     vp.TopLeftY = 0;
     m_DeviceContext->RSSetViewports(1, &vp);
+}
+
+void Takoyaki::OutputManager::UpdateWin32Window()
+{
+    MoveWindow(m_OutputHwnd, -32000, -32000, m_TargetRect.m_Width, m_TargetRect.m_Height, false);
 }
 
 LRESULT CALLBACK OutputWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
