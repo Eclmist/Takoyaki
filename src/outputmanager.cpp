@@ -197,7 +197,7 @@ void Takoyaki::OutputManager::InitializeWin32Window()
 
     m_OutputHwnd = CreateWindowExW(
         0, L"TakoyakiWindowClass", L"Takoyaki",
-        WS_POPUP | WS_VISIBLE,
+        WS_POPUP,
         0, 0, 1920, 1080,
         nullptr, nullptr, hInst, nullptr);
 

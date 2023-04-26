@@ -34,7 +34,7 @@
 #define IDM_STARTCAPTURE                102
 #define IDM_STOPCAPTURE                 103
 
-bool g_Enabled = true;
+bool g_Enabled = false;
 bool g_IsOverlayActive = false;
 bool g_IsSelectingRegion = false;
 
@@ -222,6 +222,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         g_IsOverlayActive = false;
         g_CaptureRect = g_SelectionRect;
         g_SelectionRect = { 0, 0, 1, 1 };
+        g_Enabled = true;
         break;
 
     case WM_USER:

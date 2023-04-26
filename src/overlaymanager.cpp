@@ -24,11 +24,6 @@
 Tako::TakoRect g_SelectedRegion = { 100, 100, 300, 280 };
 Takoyaki::OverlayManager* g_OverlayManager;
 
-HBRUSH hOrange = CreateSolidBrush(RGB(255, 180, 0));
-HBRUSH hRed = CreateSolidBrush(RGB(255, 0, 0));
-HBRUSH hYellow = CreateSolidBrush(RGB(255, 255, 0));
-
-
 LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
 void Takoyaki::OverlayManager::Initialize()
@@ -44,6 +39,8 @@ void Takoyaki::OverlayManager::SetEnabled(bool isEnabled)
 
     m_IsEnabled = isEnabled;
 
+    SetCursor(LoadCursor(NULL, IDC_CROSS));
+
     for (auto monitor : m_MonitorInfos)
     {
         if (m_IsEnabled)
@@ -51,10 +48,9 @@ void Takoyaki::OverlayManager::SetEnabled(bool isEnabled)
         else
             ShowWindow(monitor.first, SW_HIDE);
 
-        if (isEnabled)
+        if (m_IsEnabled)
             m_FullScreenCaptures[monitor.first] = g_OverlayManager->GetDisplaySnapshot(monitor.first, monitor.second.rcMonitor);
     }
-
 }
 
 void Takoyaki::OverlayManager::SetSelectionRect(Tako::TakoRect rect)
@@ -107,7 +103,7 @@ void Takoyaki::OverlayManager::InitializeWin32Window()
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
             className,
             L"Takoyaki Overlay",
-            WS_POPUP | WS_VISIBLE,
+            WS_POPUP,
             monitorInfo.rcMonitor.left,
             monitorInfo.rcMonitor.top,
             monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left,
@@ -204,10 +200,9 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 
         // Draw selection rectangle
         HPEN hPen = CreatePen(PS_SOLID, 2, RGB(0, 200, 255));
-        HPEN hPenOld = (HPEN)SelectObject(rtHdc, hPen);
+        SelectObject(rtHdc, hPen);
         SelectObject(rtHdc, GetStockObject(NULL_BRUSH));
         Rectangle(rtHdc, g_SelectedRegion.m_X, g_SelectedRegion.m_Y, g_SelectedRegion.m_X + g_SelectedRegion.m_Width, g_SelectedRegion.m_Y + g_SelectedRegion.m_Height);
-        SelectObject(rtHdc, hPenOld);
         DeleteObject(hPen);
 
         // copy the off-screen bitmap to the screen in a single operation
