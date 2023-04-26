@@ -37,7 +37,7 @@ namespace Takoyaki
     class OutputManager
     {
     public:
-        OutputManager(HWND appHwnd);
+        OutputManager();
         ~OutputManager() = default;
 
         void Initialize();
@@ -65,7 +65,6 @@ namespace Takoyaki
         void UpdateWin32Window();
 
     private:
-        HWND m_AppHwnd;
         HWND m_OutputHwnd;
 
         Tako::GraphicContext m_GfxContext;

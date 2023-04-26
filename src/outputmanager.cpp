@@ -23,10 +23,10 @@
 #include "data/ps.h"
 
 LRESULT CALLBACK OutputWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+extern bool g_Enabled;
 
-Takoyaki::OutputManager::OutputManager(HWND appHwnd)
-    : m_AppHwnd(appHwnd)
-    , m_OutputHwnd(nullptr)
+Takoyaki::OutputManager::OutputManager()
+    : m_OutputHwnd(nullptr)
 {
     m_TargetRect = {
         .m_Width = 1920,
@@ -193,10 +193,16 @@ void Takoyaki::OutputManager::SetEnabled(bool isEnabled)
 
 void Takoyaki::OutputManager::InitializeWin32Window()
 {
+    WNDCLASS wc = { 0 };
+    wc.lpfnWndProc = OutputWndProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = L"TakoyakiOutputWindowClass";
+    HRESULT hr = RegisterClass(&wc);
+
     HINSTANCE hInst = GetModuleHandle(NULL);
 
     m_OutputHwnd = CreateWindowExW(
-        0, L"TakoyakiWindowClass", L"Takoyaki",
+        0, L"TakoyakiOutputWindowClass", L"Takoyaki",
         WS_POPUP,
         0, 0, 1920, 1080,
         nullptr, nullptr, hInst, nullptr);
@@ -444,9 +450,9 @@ LRESULT CALLBACK OutputWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
 {
     switch (message)
     {
-    case WM_DESTROY:
+    case WM_CLOSE:
     {
-        PostQuitMessage(0);
+        g_Enabled = false;
         break;
     }
     case WM_SIZE:

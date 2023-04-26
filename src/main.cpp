@@ -111,7 +111,7 @@ int WINAPI WinMain(
         return 0;
     }
 
-    Takoyaki::OutputManager outputManager(hwnd);
+    Takoyaki::OutputManager outputManager;
     Takoyaki::OverlayManager overlayManager;
 
     outputManager.Initialize();
