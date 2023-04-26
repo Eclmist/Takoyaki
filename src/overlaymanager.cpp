@@ -18,18 +18,22 @@
 */
 
 #include "overlaymanager.h"
-#include <uxtheme.h>
-#pragma comment (lib, "uxtheme.lib")
+#include <wingdi.h>
+#pragma comment(lib, "Msimg32.lib")
 
-Gdiplus::Rect g_SelectedRegion = { 100, 100, 300, 280 };
+Tako::TakoRect g_SelectedRegion = { 100, 100, 300, 280 };
 Takoyaki::OverlayManager* g_OverlayManager;
+
+HBRUSH hOrange = CreateSolidBrush(RGB(255, 180, 0));
+HBRUSH hRed = CreateSolidBrush(RGB(255, 0, 0));
+HBRUSH hYellow = CreateSolidBrush(RGB(255, 255, 0));
+
 
 LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
 void Takoyaki::OverlayManager::Initialize()
 {
     InitializeWin32Window();
-    InitializeGdiPlus();
     g_OverlayManager = this;
 }
 
@@ -46,27 +50,16 @@ void Takoyaki::OverlayManager::SetEnabled(bool isEnabled)
             ShowWindow(monitor.first, SW_SHOW);
         else
             ShowWindow(monitor.first, SW_HIDE);
- 
-        Gdiplus::Rect fullScreenRect =
-        {
-            monitor.second.rcMonitor.left,
-            monitor.second.rcMonitor.top,
-            monitor.second.rcMonitor.right - monitor.second.rcMonitor.left,
-            monitor.second.rcMonitor.bottom - monitor.second.rcMonitor.top
-        };
 
-        m_FullScreenCaptures[monitor.first] = g_OverlayManager->GetDisplaySnapshot(monitor.first, fullScreenRect);
+        if (isEnabled)
+            m_FullScreenCaptures[monitor.first] = g_OverlayManager->GetDisplaySnapshot(monitor.first, monitor.second.rcMonitor);
     }
+
 }
 
 void Takoyaki::OverlayManager::SetSelectionRect(Tako::TakoRect rect)
 {
-    g_SelectedRegion = {
-        (INT)rect.m_X,
-        (INT)rect.m_Y,
-        (INT)rect.m_Width,
-        (INT)rect.m_Height,
-    };
+    g_SelectedRegion = rect;
 }
 
 void Takoyaki::OverlayManager::Update()
@@ -79,12 +72,6 @@ void Takoyaki::OverlayManager::Update()
 
 void Takoyaki::OverlayManager::Shutdown()
 {
-    GdiplusShutdown(m_GdiplusToken);
-}
-
-void Takoyaki::OverlayManager::InitializeGdiPlus()
-{
-    GdiplusStartup(&m_GdiplusToken, &m_GdiplusStartupInput, NULL);
 }
 
 void Takoyaki::OverlayManager::InitializeWin32Window()
@@ -100,6 +87,7 @@ void Takoyaki::OverlayManager::InitializeWin32Window()
     wc.lpfnWndProc = OverlayWndProc;
     wc.hInstance = hInst;
     wc.lpszClassName = className;
+    wc.hbrBackground = NULL;
 
     RegisterClass(&wc);
 
@@ -134,23 +122,21 @@ void Takoyaki::OverlayManager::InitializeWin32Window()
     }
 }
 
-HBITMAP Takoyaki::OverlayManager::GetDisplaySnapshot(HWND hWnd, Gdiplus::Rect rect)
+HBITMAP Takoyaki::OverlayManager::GetDisplaySnapshot(HWND hWnd, RECT rect)
 {
     if (m_MonitorInfos.find(hWnd) == m_MonitorInfos.end())
         return NULL;
 
-    Gdiplus::Size rectSize;
-    rect.GetSize(&rectSize);
-
     HDC screenDc = GetDC(hWnd);
     HDC compatibleDc = CreateCompatibleDC(screenDc);
-    HBITMAP bitmap = CreateCompatibleBitmap(screenDc, rectSize.Width, rectSize.Height);
+    HBITMAP bitmap = CreateCompatibleBitmap(screenDc, rect.right - rect.left, rect.bottom - rect.top);
     HGDIOBJ oldBitmap = SelectObject(compatibleDc, bitmap);
-    BitBlt(compatibleDc, 0, 0, rectSize.Width, rectSize.Height, screenDc, rect.GetLeft(), rect.GetTop(), SRCCOPY);
+    BitBlt(compatibleDc, 0, 0, rect.right - rect.left, rect.bottom - rect.top, screenDc, rect.left, rect.top, SRCCOPY);
     SelectObject(compatibleDc, oldBitmap);
     DeleteDC(compatibleDc);
     ReleaseDC(NULL, screenDc);
     return bitmap;
+
 }
 
 LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -179,54 +165,56 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
             break;
         }
 
-        printf("selection:: x: %i, y:%i, x2:%i y2:%i \n", g_SelectedRegion.GetLeft(), g_SelectedRegion.GetTop(), g_SelectedRegion.GetRight(), g_SelectedRegion.GetBottom());
+        RECT fullScreenRect = monitorInfos.at(hWnd).rcMonitor;
+        int screenWidth = fullScreenRect.right - fullScreenRect.left;
+        int screenHeight = fullScreenRect.bottom - fullScreenRect.top;
 
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hWnd, &ps);
+        HRGN selectionRegion = CreateRectRgn(g_SelectedRegion.m_X, g_SelectedRegion.m_Y, g_SelectedRegion.m_X + g_SelectedRegion.m_Width - 1, g_SelectedRegion.m_Y + g_SelectedRegion.m_Height - 1);
+        HRGN fullScreenRegion = CreateRectRgn(fullScreenRect.left, fullScreenRect.top, fullScreenRect.right, fullScreenRect.bottom);
 
-        RECT rc;
-        GetClientRect(hWnd, &rc);
+        HDC hdc = GetDC(hWnd);
 
-        // Start
-        HDC memdc;
-        auto hbuff = BeginBufferedPaint(hdc, &rc, BPBF_COMPATIBLEBITMAP, NULL, &memdc);
-        Gdiplus::Graphics graphics(memdc);
+        HDC rtHdc = CreateCompatibleDC(hdc);
+        HBITMAP renderTarget = CreateCompatibleBitmap(hdc, screenWidth, screenHeight);
+        SelectObject(rtHdc, renderTarget);
+        BitBlt(rtHdc, 0, 0, screenWidth, screenHeight, NULL, 0, 0, WHITENESS);
 
-        Gdiplus::Rect fullScreenRect =
-        {
-            monitorInfos.at(hWnd).rcMonitor.left,
-            monitorInfos.at(hWnd).rcMonitor.top,
-            monitorInfos.at(hWnd).rcMonitor.right - monitorInfos.at(hWnd).rcMonitor.left,
-            monitorInfos.at(hWnd).rcMonitor.bottom - monitorInfos.at(hWnd).rcMonitor.top
-        };
-
-        // Get Screen captures
-        Gdiplus::Bitmap fullScreenSnapshot(g_OverlayManager->GetFullScreenCaptures().at(hWnd), NULL);
-
-        // Copy Screen
-        graphics.DrawImage(&fullScreenSnapshot, fullScreenRect);
+        // Bitblt current snapshot to window
+        HDC miscHdc = CreateCompatibleDC(hdc);
+        HBITMAP fullScreenSnapshot = g_OverlayManager->GetFullScreenCaptures().at(hWnd);
+        SelectObject(miscHdc, fullScreenSnapshot);
+        BitBlt(rtHdc, 0, 0, screenWidth, screenHeight, miscHdc, fullScreenRect.left, fullScreenRect.top, SRCCOPY);
 
         // Darken screen
-        SolidBrush semiTransBrush(Color(64, 0, 0, 0));
-        Pen pen(Color(200, 0, 200, 255), 2);
+        HBITMAP darkenTarget = CreateCompatibleBitmap(hdc, screenWidth, screenHeight);
+        SelectObject(miscHdc, darkenTarget);
+        SelectClipRgn(rtHdc, fullScreenRegion);
+        ExtSelectClipRgn(rtHdc, selectionRegion, RGN_DIFF);
+        FillRect(miscHdc, &fullScreenRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
+        DeleteObject(selectionRegion);
+        DeleteObject(fullScreenRegion);
 
-        graphics.FillRectangle(&semiTransBrush, fullScreenRect);
+        BLENDFUNCTION blend;
+        blend.AlphaFormat = 0;
+        blend.SourceConstantAlpha = 180;
+        blend.BlendFlags = 0;
+        blend.BlendOp = AC_SRC_OVER;
+        AlphaBlend(rtHdc, 0, 0, screenWidth, screenHeight,
+            miscHdc, 0, 0, screenWidth, screenHeight, blend);
 
-        // Draw Selection Rectangle
-        graphics.DrawRectangle(&pen, g_SelectedRegion);
+        // Draw selection rectangle
+        HPEN hPen = CreatePen(PS_SOLID, 2, RGB(0, 200, 255));
+        HPEN hPenOld = (HPEN)SelectObject(rtHdc, hPen);
+        SelectObject(rtHdc, GetStockObject(NULL_BRUSH));
+        Rectangle(rtHdc, g_SelectedRegion.m_X, g_SelectedRegion.m_Y, g_SelectedRegion.m_X + g_SelectedRegion.m_Width, g_SelectedRegion.m_Y + g_SelectedRegion.m_Height);
+        SelectObject(rtHdc, hPenOld);
+        DeleteObject(hPen);
 
-        // Restore selected area's brightness
-        graphics.DrawImage(&fullScreenSnapshot,
-            g_SelectedRegion, 
-            g_SelectedRegion.GetLeft(),
-            g_SelectedRegion.GetTop(),
-            g_SelectedRegion.GetRight() - g_SelectedRegion.GetLeft(),
-            g_SelectedRegion.GetBottom() - g_SelectedRegion.GetTop(),
-            Gdiplus::UnitPixel);
-
-        // End
-        EndBufferedPaint(hbuff, TRUE);
-        EndPaint(hWnd, &ps);
+        // copy the off-screen bitmap to the screen in a single operation
+        BitBlt(hdc, 0, 0, screenWidth, screenHeight, rtHdc, 0, 0, SRCCOPY);
+        DeleteDC(miscHdc);
+        DeleteDC(rtHdc);
+        ReleaseDC(hWnd, hdc);
         break;
     }
     case WM_ERASEBKGND:

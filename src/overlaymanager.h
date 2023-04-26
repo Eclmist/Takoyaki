@@ -30,10 +30,6 @@
 #include <unordered_map>
 #include "Tako/includes/api.h"
 
-#include <gdiplus.h>
-using namespace Gdiplus;
-#pragma comment (lib,"Gdiplus.lib")
-
 namespace wrl = Microsoft::WRL;
 
 namespace Takoyaki
@@ -50,24 +46,18 @@ namespace Takoyaki
         void Update();
         void Shutdown();
 
-        HBITMAP GetDisplaySnapshot(HWND hWnd, Gdiplus::Rect rect);
-
     public:
         inline bool IsEnabled() const { return m_IsEnabled; }
         inline const std::unordered_map<HWND, MONITORINFOEX>& GetMonitorInfos() const { return m_MonitorInfos; }
         inline const std::unordered_map<HWND, HBITMAP>& GetFullScreenCaptures() const { return m_FullScreenCaptures; }
 
     private:
-        void InitializeGdiPlus();
         void InitializeWin32Window();
-
+        HBITMAP GetDisplaySnapshot(HWND hWnd, RECT rect);
 
     private:
         std::unordered_map<HWND, MONITORINFOEX> m_MonitorInfos;
         std::unordered_map<HWND, HBITMAP> m_FullScreenCaptures;
-
-        GdiplusStartupInput m_GdiplusStartupInput;
-        ULONG_PTR m_GdiplusToken;
 
         uint32_t m_NumMonitors = 0;
         bool m_IsEnabled;
