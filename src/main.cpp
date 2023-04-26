@@ -303,6 +303,9 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
                 return CallNextHookEx(NULL, nCode, wParam, lParam);
 
             g_IsOverlayActive = false;
+            g_IsSelectingRegion = false;
+            g_SelectionRect = { 0, 0, 1, 1 };
+
             return 1;
         }
     }

@@ -192,7 +192,7 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 
         BLENDFUNCTION blend;
         blend.AlphaFormat = 0;
-        blend.SourceConstantAlpha = 180;
+        blend.SourceConstantAlpha = 150;
         blend.BlendFlags = 0;
         blend.BlendOp = AC_SRC_OVER;
         AlphaBlend(rtHdc, 0, 0, screenWidth, screenHeight,
