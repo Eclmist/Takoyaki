@@ -37,7 +37,7 @@ Takoyaki::OutputManager::OutputManager(HWND appHwnd)
 void Takoyaki::OutputManager::Initialize()
 {
     InitializeWin32Window();
-    InitializeD3D11();
+    InitializeGraphicsApi();
 }
 
 void Takoyaki::OutputManager::Render()
@@ -88,7 +88,7 @@ void Takoyaki::OutputManager::Render()
 
     // Create new shader resource view
     ID3D11ShaderResourceView* shaderResource = nullptr;
-    HRESULT hr = m_Device->CreateShaderResourceView(m_SharedTexture.Get(), &srvDesc, &shaderResource);
+    HRESULT hr = m_GfxContext.GetDevice()->CreateShaderResourceView(m_SharedTexture.Get(), &srvDesc, &shaderResource);
     if (FAILED(hr))
     {
         MessageBox(nullptr, L"Failed to create SRV while rendering frame.", L"Takoyaki Error", MB_OK);
@@ -98,13 +98,13 @@ void Takoyaki::OutputManager::Render()
     UINT stride = sizeof(Vertex);
     UINT offset = 0;
     FLOAT blendFactor[4] = { 0.f, 0.f, 0.f, 0.f };
-    m_DeviceContext->OMSetBlendState(nullptr, blendFactor, 0xffffffff);
-    m_DeviceContext->OMSetRenderTargets(1, m_BackbufferRtv.GetAddressOf(), nullptr);
-    m_DeviceContext->VSSetShader(m_VertexShader.Get(), nullptr, 0);
-    m_DeviceContext->PSSetShader(m_PixelShader.Get(), nullptr, 0);
-    m_DeviceContext->PSSetShaderResources(0, 1, &shaderResource);
-    m_DeviceContext->PSSetSamplers(0, 1, m_Sampler.GetAddressOf());
-    m_DeviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    m_GfxContext.GetDeviceContext()->OMSetBlendState(nullptr, blendFactor, 0xffffffff);
+    m_GfxContext.GetDeviceContext()->OMSetRenderTargets(1, m_BackbufferRtv.GetAddressOf(), nullptr);
+    m_GfxContext.GetDeviceContext()->VSSetShader(m_VertexShader.Get(), nullptr, 0);
+    m_GfxContext.GetDeviceContext()->PSSetShader(m_PixelShader.Get(), nullptr, 0);
+    m_GfxContext.GetDeviceContext()->PSSetShaderResources(0, 1, &shaderResource);
+    m_GfxContext.GetDeviceContext()->PSSetSamplers(0, 1, m_Sampler.GetAddressOf());
+    m_GfxContext.GetDeviceContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
     D3D11_BUFFER_DESC bufferDesc;
     RtlZeroMemory(&bufferDesc, sizeof(bufferDesc));
@@ -118,16 +118,16 @@ void Takoyaki::OutputManager::Render()
 
     // Create vertex buffer
     ID3D11Buffer* vertexBuffer = nullptr;
-    hr = m_Device->CreateBuffer(&bufferDesc, &initData, &vertexBuffer);
+    hr = m_GfxContext.GetDevice()->CreateBuffer(&bufferDesc, &initData, &vertexBuffer);
     if (FAILED(hr))
     {
         MessageBox(nullptr, L"Failed to create vertex buffer while rendering frame.", L"Takoyaki Error", MB_OK);
         exit(0);
     }
-    m_DeviceContext->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
+    m_GfxContext.GetDeviceContext()->IASetVertexBuffers(0, 1, &vertexBuffer, &stride, &offset);
 
     // Draw textured quad onto render target
-    m_DeviceContext->Draw(NumVertices, 0);
+    m_GfxContext.GetDeviceContext()->Draw(NumVertices, 0);
 
     // Release keyed mutex
     hr = m_KeyMutex->ReleaseSync(0);
@@ -210,10 +210,10 @@ void Takoyaki::OutputManager::InitializeWin32Window()
     UpdateWin32Window();
 }
 
-void Takoyaki::OutputManager::InitializeD3D11()
+void Takoyaki::OutputManager::InitializeGraphicsApi()
 {
-    InitializeDevice();
-    InitializeDxgi();
+    m_GfxContext.Initialize();
+
     InitializeSwapChain();
     InitializeSharedTexture();
     InitializeBackbufferRtv();
@@ -222,77 +222,6 @@ void Takoyaki::OutputManager::InitializeD3D11()
     InitializeShaders();
 
     UpdateViewport();
-}
-
-void Takoyaki::OutputManager::InitializeDevice()
-{
-    D3D_DRIVER_TYPE driverTypes[] =
-    {
-        D3D_DRIVER_TYPE_HARDWARE,
-        D3D_DRIVER_TYPE_WARP,
-        D3D_DRIVER_TYPE_REFERENCE,
-    };
-    UINT numDriverTypes = ARRAYSIZE(driverTypes);
-
-    D3D_FEATURE_LEVEL featureLevels[] =
-    {
-    // Release old buffers
-    // On DX12, this would be done manually with signal/fence
-        D3D_FEATURE_LEVEL_11_0,
-        D3D_FEATURE_LEVEL_10_1,
-        D3D_FEATURE_LEVEL_10_0,
-        D3D_FEATURE_LEVEL_9_1
-    };
-    UINT numFeatureLevels = ARRAYSIZE(featureLevels);
-    D3D_FEATURE_LEVEL currentFeatureLevel;
-
-    HRESULT hr;
-
-    // Create device
-    for (UINT i = 0; i < numDriverTypes; ++i)
-    {
-        UINT createDeviceFlags = 0;
-#ifdef _DEBUG 
-        createDeviceFlags = D3D11_CREATE_DEVICE_DEBUG;
-#endif
-        
-        hr = D3D11CreateDevice(nullptr, driverTypes[i], nullptr, D3D11_CREATE_DEVICE_DEBUG, featureLevels, numFeatureLevels,
-            D3D11_SDK_VERSION, &m_Device, &currentFeatureLevel, &m_DeviceContext);
-
-        if (SUCCEEDED(hr))
-            break;
-    }
-
-    if (FAILED(hr))
-    {
-        MessageBox(nullptr, L"Failed to find a compatible graphics device.", L"Takoyaki Error", MB_OK);
-        exit(0);
-    }
-}
-
-void Takoyaki::OutputManager::InitializeDxgi()
-{
-    // DXGI Factory
-    HRESULT hr = m_Device->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(m_DxgiDevice.GetAddressOf()));
-    if (FAILED(hr))
-    {
-        MessageBox(nullptr, L"Failed to query interface for DXGI.", L"Takoyaki Error", MB_OK);
-        exit(0);
-    }
-
-    hr = m_DxgiDevice->GetParent(__uuidof(IDXGIAdapter), reinterpret_cast<void**>(m_DxgiAdapter.GetAddressOf()));
-    if (FAILED(hr))
-    {
-        MessageBox(nullptr, L"Failed to get parent DXGI Adapter.", L"Takoyaki Error", MB_OK);
-        exit(0);
-    }
-
-    hr = m_DxgiAdapter->GetParent(__uuidof(IDXGIFactory2), reinterpret_cast<void**>(m_DxgiFactory.GetAddressOf()));
-    if (FAILED(hr))
-    {
-        MessageBox(nullptr, L"Failed to get parent DXGI Factory.", L"Takoyaki Error", MB_OK);
-        exit(0);
-    }
 }
 
 void Takoyaki::OutputManager::InitializeSwapChain()
@@ -315,7 +244,8 @@ void Takoyaki::OutputManager::InitializeSwapChain()
     swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
     swapChainDesc.SampleDesc.Count = 1;
     swapChainDesc.SampleDesc.Quality = 0;
-    HRESULT hr = m_DxgiFactory->CreateSwapChainForHwnd(m_Device.Get(), m_OutputHwnd, &swapChainDesc, nullptr, nullptr, &m_DxgiSwapChain);
+    HRESULT hr = m_GfxContext.GetDxgiFactory()->CreateSwapChainForHwnd(
+        m_GfxContext.GetDevice().Get(), m_OutputHwnd, &swapChainDesc, nullptr, nullptr, &m_DxgiSwapChain);
 
     if (FAILED(hr))
     {
@@ -339,7 +269,7 @@ void Takoyaki::OutputManager::InitializeSharedTexture()
     desc.CPUAccessFlags = 0;
     desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
 
-    HRESULT hr = m_Device->CreateTexture2D(&desc, nullptr, m_SharedTexture.GetAddressOf());
+    HRESULT hr = m_GfxContext.GetDevice()->CreateTexture2D(&desc, nullptr, m_SharedTexture.GetAddressOf());
     static bool isInitialization = true;
 
     if (FAILED(hr))
@@ -381,7 +311,7 @@ void Takoyaki::OutputManager::InitializeBackbufferRtv()
         exit(0);
     }
 
-    hr = m_Device->CreateRenderTargetView(backBuffer, nullptr, m_BackbufferRtv.GetAddressOf());
+    hr = m_GfxContext.GetDevice()->CreateRenderTargetView(backBuffer, nullptr, m_BackbufferRtv.GetAddressOf());
     backBuffer->Release();
     if (FAILED(hr))
     {
@@ -390,7 +320,7 @@ void Takoyaki::OutputManager::InitializeBackbufferRtv()
     }
 
     // Set new render target
-    m_DeviceContext->OMSetRenderTargets(1, m_BackbufferRtv.GetAddressOf(), nullptr);
+    m_GfxContext.GetDeviceContext()->OMSetRenderTargets(1, m_BackbufferRtv.GetAddressOf(), nullptr);
 }
 
 void Takoyaki::OutputManager::InitializeSampler()
@@ -404,7 +334,7 @@ void Takoyaki::OutputManager::InitializeSampler()
     sampleDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
     sampleDesc.MinLOD = 0;
     sampleDesc.MaxLOD = D3D11_FLOAT32_MAX;
-    HRESULT hr = m_Device->CreateSamplerState(&sampleDesc, &m_Sampler);
+    HRESULT hr = m_GfxContext.GetDevice()->CreateSamplerState(&sampleDesc, &m_Sampler);
     if (FAILED(hr))
     {
         MessageBox(nullptr, L"Failed to create sampler state.", L"Takoyaki Error", MB_OK);
@@ -426,7 +356,7 @@ void Takoyaki::OutputManager::InitializeBlendState()
     blendStateDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
     blendStateDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
     blendStateDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-    HRESULT hr = m_Device->CreateBlendState(&blendStateDesc, &m_BlendState);
+    HRESULT hr = m_GfxContext.GetDevice()->CreateBlendState(&blendStateDesc, &m_BlendState);
     if (FAILED(hr))
     {
         MessageBox(nullptr, L"Failed to create blend state.", L"Takoyaki Error", MB_OK);
@@ -439,7 +369,7 @@ void Takoyaki::OutputManager::InitializeShaders()
     HRESULT hr;
 
     UINT size = ARRAYSIZE(g_VS_Main);
-    hr = m_Device->CreateVertexShader(g_VS_Main, size, nullptr, &m_VertexShader);
+    hr = m_GfxContext.GetDevice()->CreateVertexShader(g_VS_Main, size, nullptr, &m_VertexShader);
     if (FAILED(hr))
     {
         MessageBox(nullptr, L"Failed to create vertex shader.", L"Takoyaki Error", MB_OK);
@@ -453,16 +383,16 @@ void Takoyaki::OutputManager::InitializeShaders()
     };
 
     UINT numElements = ARRAYSIZE(inputLayout);
-    hr = m_Device->CreateInputLayout(inputLayout, numElements, g_VS_Main, size, m_InputLayout.GetAddressOf());
+    hr = m_GfxContext.GetDevice()->CreateInputLayout(inputLayout, numElements, g_VS_Main, size, m_InputLayout.GetAddressOf());
     if (FAILED(hr))
     {
         MessageBox(nullptr, L"Failed to create input layout for vertex shader.", L"Takoyaki Error", MB_OK);
         exit(0);
     }
-    m_DeviceContext->IASetInputLayout(m_InputLayout.Get());
+    m_GfxContext.GetDeviceContext()->IASetInputLayout(m_InputLayout.Get());
 
     size = ARRAYSIZE(g_PS_Main);
-    hr = m_Device->CreatePixelShader(g_PS_Main, size, nullptr, &m_PixelShader);
+    hr = m_GfxContext.GetDevice()->CreatePixelShader(g_PS_Main, size, nullptr, &m_PixelShader);
     if (FAILED(hr))
     {
         MessageBox(nullptr, L"Failed to create pixel shader.", L"Takoyaki Error", MB_OK);
@@ -502,7 +432,7 @@ void Takoyaki::OutputManager::UpdateViewport()
     vp.MaxDepth = 1.0f;
     vp.TopLeftX = 0;
     vp.TopLeftY = 0;
-    m_DeviceContext->RSSetViewports(1, &vp);
+    m_GfxContext.GetDeviceContext()->RSSetViewports(1, &vp);
 }
 
 void Takoyaki::OutputManager::UpdateWin32Window()

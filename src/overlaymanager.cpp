@@ -18,62 +18,79 @@
 */
 
 #include "overlaymanager.h"
+#include <uxtheme.h>
+#pragma comment (lib, "uxtheme.lib")
 
-RECT g_SelectedRegion = { 0, 0, 500, 200 };
+Gdiplus::Rect g_SelectedRegion = { 100, 100, 300, 280 };
+Takoyaki::OverlayManager* g_OverlayManager;
 
 LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
 void Takoyaki::OverlayManager::Initialize()
 {
     InitializeWin32Window();
+    InitializeGdiPlus();
+    g_OverlayManager = this;
 }
 
-void Takoyaki::OverlayManager::Update(RECT selectionRect, bool isEnabled)
+void Takoyaki::OverlayManager::SetEnabled(bool isEnabled)
 {
     if (isEnabled == m_IsEnabled)
         return;
 
     m_IsEnabled = isEnabled;
-    g_SelectedRegion = selectionRect;
 
-    for (uint32_t i = 0; i < m_NumMonitors; ++i)
+    for (auto monitor : m_MonitorInfos)
     {
         if (m_IsEnabled)
-            ShowWindow(m_OverlayHwnds[i], SW_SHOW);
+            ShowWindow(monitor.first, SW_SHOW);
         else
-            ShowWindow(m_OverlayHwnds[i], SW_HIDE);
+            ShowWindow(monitor.first, SW_HIDE);
+ 
+        Gdiplus::Rect fullScreenRect =
+        {
+            monitor.second.rcMonitor.left,
+            monitor.second.rcMonitor.top,
+            monitor.second.rcMonitor.right - monitor.second.rcMonitor.left,
+            monitor.second.rcMonitor.bottom - monitor.second.rcMonitor.top
+        };
 
-        UpdateWindow(m_OverlayHwnds[i]);
+        m_FullScreenCaptures[monitor.first] = g_OverlayManager->GetDisplaySnapshot(monitor.first, fullScreenRect);
+    }
+}
+
+void Takoyaki::OverlayManager::SetSelectionRect(Tako::TakoRect rect)
+{
+    g_SelectedRegion = {
+        (INT)rect.m_X,
+        (INT)rect.m_Y,
+        (INT)rect.m_Width,
+        (INT)rect.m_Height,
+    };
+}
+
+void Takoyaki::OverlayManager::Update()
+{
+    for (auto monitor : m_MonitorInfos)
+    {
+        InvalidateRect(monitor.first, NULL, TRUE);
     }
 }
 
 void Takoyaki::OverlayManager::Shutdown()
 {
-    // Delete the bitmap
-    DeleteObject(m_hBitmap);
+    GdiplusShutdown(m_GdiplusToken);
+}
 
-    // Delete the memory DC
-    DeleteDC(m_hMemDC);
-
-    // Release the screen DC
-    ReleaseDC(NULL, m_hScreenDC);
+void Takoyaki::OverlayManager::InitializeGdiPlus()
+{
+    GdiplusStartup(&m_GdiplusToken, &m_GdiplusStartupInput, NULL);
 }
 
 void Takoyaki::OverlayManager::InitializeWin32Window()
 {
     HINSTANCE hInst = GetModuleHandle(NULL);
     m_NumMonitors = GetSystemMetrics(SM_CMONITORS);
-
-    for (int i = 0; i < m_NumMonitors; i++)
-    {
-        m_MonitorInfos[i].cbSize = sizeof(MONITORINFOEX);
-        POINT monitorTopLeft = {
-            m_MonitorInfos[i].rcMonitor.left,
-            m_MonitorInfos[i].rcMonitor.top
-        };
-
-        GetMonitorInfo(MonitorFromPoint(monitorTopLeft, MONITOR_DEFAULTTONEAREST), &m_MonitorInfos[i]);
-    }
 
     // Register the window class.
     const wchar_t className[] = L"TakoyakiOverlayWindowClass";
@@ -88,27 +105,59 @@ void Takoyaki::OverlayManager::InitializeWin32Window()
 
     for (int i = 0; i < m_NumMonitors; i++)
     {
-        m_OverlayHwnds[i] = CreateWindowEx(
-            WS_EX_TOOLWINDOW,
+        MONITORINFOEX monitorInfo;
+
+        monitorInfo.cbSize = sizeof(MONITORINFOEX);
+        POINT monitorTopLeft = {
+            monitorInfo.rcMonitor.left,
+            monitorInfo.rcMonitor.top
+        };
+
+        GetMonitorInfo(MonitorFromPoint(monitorTopLeft, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+
+        HWND hwnd = CreateWindowEx(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
             className,
             L"Takoyaki Overlay",
             WS_POPUP | WS_VISIBLE,
-            m_MonitorInfos[i].rcMonitor.left,
-            m_MonitorInfos[i].rcMonitor.top,
-            m_MonitorInfos[i].rcMonitor.right - m_MonitorInfos[i].rcMonitor.left,
-            m_MonitorInfos[i].rcMonitor.bottom - m_MonitorInfos[i].rcMonitor.top,
+            monitorInfo.rcMonitor.left,
+            monitorInfo.rcMonitor.top,
+            monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left,
+            monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top,
             NULL,
             NULL,
             hInst,
             NULL
         );
 
-        SetLayeredWindowAttributes(m_OverlayHwnds[i], RGB(0, 0, 0), 0, LWA_COLORKEY | LWA_ALPHA);
+        m_MonitorInfos.insert({ hwnd, monitorInfo });
     }
+}
+
+HBITMAP Takoyaki::OverlayManager::GetDisplaySnapshot(HWND hWnd, Gdiplus::Rect rect)
+{
+    if (m_MonitorInfos.find(hWnd) == m_MonitorInfos.end())
+        return NULL;
+
+    Gdiplus::Size rectSize;
+    rect.GetSize(&rectSize);
+
+    HDC screenDc = GetDC(hWnd);
+    HDC compatibleDc = CreateCompatibleDC(screenDc);
+    HBITMAP bitmap = CreateCompatibleBitmap(screenDc, rectSize.Width, rectSize.Height);
+    HGDIOBJ oldBitmap = SelectObject(compatibleDc, bitmap);
+    BitBlt(compatibleDc, 0, 0, rectSize.Width, rectSize.Height, screenDc, rect.GetLeft(), rect.GetTop(), SRCCOPY);
+    SelectObject(compatibleDc, oldBitmap);
+    DeleteDC(compatibleDc);
+    ReleaseDC(NULL, screenDc);
+    return bitmap;
 }
 
 LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    if (g_OverlayManager == nullptr)
+        return DefWindowProc(hWnd, message, wParam, lParam);
+
     switch (message)
     {
     case WM_DESTROY:
@@ -118,17 +167,70 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
     }
     case WM_PAINT:
     {
+        if (!g_OverlayManager->IsEnabled())
+            break;
+
+        auto monitorInfos = g_OverlayManager->GetMonitorInfos();
+        HWND hWnd;
+
+        for (auto monitor : monitorInfos)
+        {
+            hWnd = monitor.first;
+            break;
+        }
+
+        printf("selection:: x: %i, y:%i, x2:%i y2:%i \n", g_SelectedRegion.GetLeft(), g_SelectedRegion.GetTop(), g_SelectedRegion.GetRight(), g_SelectedRegion.GetBottom());
+
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hWnd, &ps);
 
-        // Draw white rectangle outline
-        HBRUSH brush = CreateSolidBrush(RGB(255, 255, 255));
-        FrameRect(hdc, &g_SelectedRegion, brush);
-        DeleteObject(brush);
+        RECT rc;
+        GetClientRect(hWnd, &rc);
+
+        // Start
+        HDC memdc;
+        auto hbuff = BeginBufferedPaint(hdc, &rc, BPBF_COMPATIBLEBITMAP, NULL, &memdc);
+        Gdiplus::Graphics graphics(memdc);
+
+        Gdiplus::Rect fullScreenRect =
+        {
+            monitorInfos.at(hWnd).rcMonitor.left,
+            monitorInfos.at(hWnd).rcMonitor.top,
+            monitorInfos.at(hWnd).rcMonitor.right - monitorInfos.at(hWnd).rcMonitor.left,
+            monitorInfos.at(hWnd).rcMonitor.bottom - monitorInfos.at(hWnd).rcMonitor.top
+        };
+
+        // Get Screen captures
+        Gdiplus::Bitmap fullScreenSnapshot(g_OverlayManager->GetFullScreenCaptures().at(hWnd), NULL);
+
+        // Copy Screen
+        graphics.DrawImage(&fullScreenSnapshot, fullScreenRect);
+
+        // Darken screen
+        SolidBrush semiTransBrush(Color(64, 0, 0, 0));
+        Pen pen(Color(200, 0, 200, 255), 2);
+
+        graphics.FillRectangle(&semiTransBrush, fullScreenRect);
+
+        // Draw Selection Rectangle
+        graphics.DrawRectangle(&pen, g_SelectedRegion);
+
+        // Restore selected area's brightness
+        graphics.DrawImage(&fullScreenSnapshot,
+            g_SelectedRegion, 
+            g_SelectedRegion.GetLeft(),
+            g_SelectedRegion.GetTop(),
+            g_SelectedRegion.GetRight() - g_SelectedRegion.GetLeft(),
+            g_SelectedRegion.GetBottom() - g_SelectedRegion.GetTop(),
+            Gdiplus::UnitPixel);
+
+        // End
+        EndBufferedPaint(hbuff, TRUE);
         EndPaint(hWnd, &ps);
         break;
     }
-
+    case WM_ERASEBKGND:
+        return TRUE; // tell Windows that we handled it. (but don't actually draw anything)
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }

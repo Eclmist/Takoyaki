@@ -35,16 +35,23 @@
 #define IDM_STOPCAPTURE                 103
 
 bool g_Enabled = true;
-bool g_Recording = false;
+bool g_IsOverlayActive = false;
+bool g_IsSelectingRegion = false;
 
-POINT g_StartPoint;
+POINT g_StartPoint, g_EndPoint;
 
-Tako::TakoRect g_CaptureRect
-{
+Tako::TakoRect g_CaptureRect = {
     .m_X = 0,
     .m_Y = 0,
-    .m_Width = 800,
-    .m_Height = 480
+    .m_Width = 1,
+    .m_Height = 1,
+};
+
+Tako::TakoRect g_SelectionRect = {
+    .m_X = 0,
+    .m_Y = 0,
+    .m_Width = 1,
+    .m_Height = 1,
 };
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -63,6 +70,13 @@ int WINAPI WinMain(
         MessageBox(nullptr, L"An instance of Takoyaki is already running.", L"Takoyaki", MB_OK | MB_ICONERROR);
         return 0;
     }
+
+#if _DEBUG
+    AllocConsole();
+    FILE* fp;
+    freopen_s(&fp, "CONOUT$", "w", stdout);
+    printf("Takoyaki debug console enabled\n");
+#endif
 
     // Register the window class
     WNDCLASS wc = { 0 };
@@ -101,7 +115,7 @@ int WINAPI WinMain(
     Takoyaki::OverlayManager overlayManager;
 
     outputManager.Initialize();
-    //overlayManager.Initialize();
+    overlayManager.Initialize();
 
     // Add the icon to the system tray
     NOTIFYICONDATA nid = { 0 };
@@ -125,38 +139,37 @@ int WINAPI WinMain(
             DispatchMessage(&msg);
         }
 
+        overlayManager.SetEnabled(g_IsOverlayActive);
         outputManager.SetEnabled(g_Enabled);
-        outputManager.SetTargetRect(g_CaptureRect);
-        
-        POINT endPoint;
-        GetPhysicalCursorPos(&endPoint);
 
-        // Calculate the rectangle coordinates.
-        RECT overlayRect =
+        if (g_IsOverlayActive)
         {
-            std::min(g_StartPoint.x, endPoint.x),
-            std::min(g_StartPoint.y, endPoint.y),
-            std::max(g_StartPoint.x, endPoint.x),
-            std::max(g_StartPoint.y, endPoint.y),
-        };
-
-        //overlayManager.Update(overlayRect, g_Recording);
-
-        if (!g_Enabled)
-            continue;
-
-        Tako::TakoError err = Tako::CaptureIntoBuffer(outputManager.GetSharedTextureHandle(), g_CaptureRect);
-        if (err != Tako::TakoError::OK)
-        {
-            MessageBox(nullptr, L"Failed to capture display buffer. (Tako.dll)", L"Takoyaki Error", MB_OK);
-            break;
+            SetCapture(hwnd); // Grab Mouse Events
+            overlayManager.SetSelectionRect(g_SelectionRect);
+            overlayManager.Update();
         }
+        else
+        {
+            ReleaseCapture(); // Release Mouse Events
+            outputManager.SetTargetRect(g_CaptureRect);
 
-        outputManager.Render();
+            if (!g_Enabled)
+                continue;
+
+            Tako::TakoError err = Tako::CaptureIntoBuffer(outputManager.GetSharedTextureHandle(), g_CaptureRect);
+            if (err != Tako::TakoError::OK)
+            {
+                MessageBox(nullptr, L"Failed to capture display buffer. (Tako.dll)", L"Takoyaki Error", MB_OK);
+                break;
+            }
+
+            outputManager.Render();
+        }
     }
 
     // Remove the icon from the system tray
     Shell_NotifyIcon(NIM_DELETE, &nid);
+
     UnhookWindowsHookEx(keyboardHook);
 
     overlayManager.Shutdown();
@@ -169,6 +182,48 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
     {
+    case WM_LBUTTONDOWN:
+        if (!g_IsOverlayActive)
+            break;
+        if (g_IsSelectingRegion)
+            break;
+
+        GetPhysicalCursorPos(&g_StartPoint);
+        g_IsSelectingRegion = true;
+        break;
+
+    case WM_MOUSEMOVE:
+        if (!g_IsOverlayActive)
+            break;
+
+        if (!g_IsSelectingRegion)
+            break;
+
+
+        GetPhysicalCursorPos(&g_EndPoint);
+
+        g_SelectionRect =
+        {
+            std::min(g_StartPoint.x, g_EndPoint.x),
+            std::min(g_StartPoint.y, g_EndPoint.y),
+            static_cast<uint32_t>(std::max(1l, std::abs(g_StartPoint.x - g_EndPoint.x))),
+            static_cast<uint32_t>(std::max(1l, std::abs(g_StartPoint.y - g_EndPoint.y)))
+        };
+
+        break;
+
+    case WM_LBUTTONUP:
+        if (!g_IsOverlayActive)
+            break;
+        if (!g_IsSelectingRegion)
+            break;
+
+        g_IsSelectingRegion = false;
+        g_IsOverlayActive = false;
+        g_CaptureRect = g_SelectionRect;
+        g_SelectionRect = { 0, 0, 1, 1 };
+        break;
+
     case WM_USER:
         // Handle system tray messages here
         if (LOWORD(lParam) == WM_RBUTTONUP)
@@ -223,6 +278,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 }
 
 #define X_KEY 0x58
+#define ESC_KEY 0x1B
 
 LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
@@ -234,35 +290,17 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
         // Check if the WIN+SHIFT+X key combination was pressed.
         if (pKeyData->vkCode == X_KEY && (GetKeyState(VK_LWIN) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000))
         {
-            if (g_Recording)
+            if (g_IsOverlayActive)
                 return 1;
 
-            g_Recording = true;
-            GetPhysicalCursorPos(&g_StartPoint);
+            g_IsOverlayActive = true;
             return 1;
         }
-    }
-    else if (nCode == HC_ACTION && (wParam == WM_KEYUP || wParam == WM_SYSKEYUP))
-    {
-        KBDLLHOOKSTRUCT* pKeyData = (KBDLLHOOKSTRUCT*)lParam;
-
-        // Check if the WIN+SHIFT+X key combination was released.
-        if (pKeyData->vkCode == X_KEY && (GetKeyState(VK_LWIN) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000) && g_Recording)
+        else if (pKeyData->vkCode == ESC_KEY)
         {
-            g_Recording = false;
-
-            POINT endPoint;
-            GetPhysicalCursorPos(&endPoint);
-
-            // Calculate the rectangle coordinates.
-            g_CaptureRect =
-            {
-                std::min(g_StartPoint.x, endPoint.x),
-                std::min(g_StartPoint.y, endPoint.y),
-                static_cast<uint32_t>(std::max(1l, std::abs(g_StartPoint.x - endPoint.x))),
-                static_cast<uint32_t>(std::max(1l, std::abs(g_StartPoint.y - endPoint.y)))
-            };
-
+            if (!g_IsOverlayActive)
+                return 1;
+            g_IsOverlayActive = false;
             return 1;
         }
     }

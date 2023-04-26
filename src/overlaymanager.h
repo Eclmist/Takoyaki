@@ -27,8 +27,12 @@
 #include <dxgi1_2.h>
 #include <DirectXMath.h>
 #include <wrl.h>
-
+#include <unordered_map>
 #include "Tako/includes/api.h"
+
+#include <gdiplus.h>
+using namespace Gdiplus;
+#pragma comment (lib,"Gdiplus.lib")
 
 namespace wrl = Microsoft::WRL;
 
@@ -41,21 +45,31 @@ namespace Takoyaki
         ~OverlayManager() = default;
 
         void Initialize();
-        void Update(RECT selectionRect, bool isEnabled);
+        void SetEnabled(bool isEnabled);
+        void SetSelectionRect(Tako::TakoRect rect);
+        void Update();
         void Shutdown();
 
+        HBITMAP GetDisplaySnapshot(HWND hWnd, Gdiplus::Rect rect);
+
+    public:
+        inline bool IsEnabled() const { return m_IsEnabled; }
+        inline const std::unordered_map<HWND, MONITORINFOEX>& GetMonitorInfos() const { return m_MonitorInfos; }
+        inline const std::unordered_map<HWND, HBITMAP>& GetFullScreenCaptures() const { return m_FullScreenCaptures; }
+
     private:
+        void InitializeGdiPlus();
         void InitializeWin32Window();
 
+
     private:
-        MONITORINFOEX m_MonitorInfos[16];
-        HWND m_OverlayHwnds[16];
+        std::unordered_map<HWND, MONITORINFOEX> m_MonitorInfos;
+        std::unordered_map<HWND, HBITMAP> m_FullScreenCaptures;
+
+        GdiplusStartupInput m_GdiplusStartupInput;
+        ULONG_PTR m_GdiplusToken;
+
         uint32_t m_NumMonitors = 0;
-
-        HDC m_hScreenDC = NULL;
-        HDC m_hMemDC = NULL;
-        HBITMAP m_hBitmap = NULL;
-
         bool m_IsEnabled;
     };
 }

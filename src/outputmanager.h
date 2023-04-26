@@ -51,10 +51,8 @@ namespace Takoyaki
 
     private:
         void InitializeWin32Window();
-        void InitializeD3D11();
+        void InitializeGraphicsApi();
 
-        void InitializeDevice();
-        void InitializeDxgi();
         void InitializeSwapChain();
         void InitializeSharedTexture();
         void InitializeBackbufferRtv();
@@ -70,14 +68,12 @@ namespace Takoyaki
         HWND m_AppHwnd;
         HWND m_OutputHwnd;
 
-        wrl::ComPtr<IDXGIAdapter> m_DxgiAdapter;
-        wrl::ComPtr<IDXGIFactory2> m_DxgiFactory;
-        wrl::ComPtr<IDXGIDevice> m_DxgiDevice;
+        Tako::GraphicContext m_GfxContext;
+        Tako::TakoRect m_TargetRect;
+
         wrl::ComPtr<IDXGISwapChain1> m_DxgiSwapChain;
         wrl::ComPtr<IDXGIKeyedMutex> m_KeyMutex;
 
-        wrl::ComPtr<ID3D11Device> m_Device;
-        wrl::ComPtr<ID3D11DeviceContext> m_DeviceContext;
         wrl::ComPtr<ID3D11RenderTargetView> m_BackbufferRtv;
         wrl::ComPtr<ID3D11SamplerState> m_Sampler;
         wrl::ComPtr<ID3D11BlendState> m_BlendState;
@@ -85,8 +81,6 @@ namespace Takoyaki
         wrl::ComPtr<ID3D11PixelShader> m_PixelShader;
         wrl::ComPtr<ID3D11InputLayout> m_InputLayout;
         wrl::ComPtr<ID3D11Texture2D> m_SharedTexture;
-
-        Tako::TakoRect m_TargetRect;
 
         bool m_IsEnabled;
     };
