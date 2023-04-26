@@ -292,7 +292,7 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
         if (pKeyData->vkCode == X_KEY && (GetKeyState(VK_LWIN) & 0x8000) && (GetKeyState(VK_SHIFT) & 0x8000))
         {
             if (g_IsOverlayActive)
-                return 1;
+                return CallNextHookEx(NULL, nCode, wParam, lParam);
 
             g_IsOverlayActive = true;
             return 1;
@@ -300,7 +300,8 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
         else if (pKeyData->vkCode == ESC_KEY)
         {
             if (!g_IsOverlayActive)
-                return 1;
+                return CallNextHookEx(NULL, nCode, wParam, lParam);
+
             g_IsOverlayActive = false;
             return 1;
         }

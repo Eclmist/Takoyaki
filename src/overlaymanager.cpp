@@ -207,6 +207,12 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 
         // copy the off-screen bitmap to the screen in a single operation
         BitBlt(hdc, 0, 0, screenWidth, screenHeight, rtHdc, 0, 0, SRCCOPY);
+        
+        DeleteObject(renderTarget);
+        DeleteObject(darkenTarget);
+
+        DeleteObject(selectionRegion);
+        DeleteObject(fullScreenRegion);
         DeleteDC(miscHdc);
         DeleteDC(rtHdc);
         ReleaseDC(hWnd, hdc);
